@@ -53,7 +53,7 @@ func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		auth.POST("/signup", authHandler.Signup)
 		auth.POST("/login", authHandler.Login)
 		auth.POST("/logout", middleware.AuthMiddleware(cfg), authHandler.Logout)
-		auth.POST("/refresh", authHandler.RefreshToken)
+		auth.POST("/refresh-token", authHandler.RefreshToken)
 		auth.GET("/profile", middleware.AuthMiddleware(cfg), authHandler.GetProfile)
 	}
 
@@ -61,7 +61,7 @@ func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	passwordGroup := api.Group("/password")
 	{
 		passwordGroup.POST("/forgot", passwordHandler.ForgotPassword)
-		passwordGroup.GET("/validate-reset-token", passwordHandler.ValidateResetToken)
+		passwordGroup.GET("/validate-reset-token",  passwordHandler.ValidateResetToken, ) // Requires authentication
 		passwordGroup.POST("/reset", passwordHandler.ResetPassword)
 		passwordGroup.POST("/change", middleware.AuthMiddleware(cfg), passwordHandler.ChangePassword) // Requires authentication
 	}

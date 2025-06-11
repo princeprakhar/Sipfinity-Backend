@@ -63,11 +63,13 @@ type RefreshRequest struct {
 }
 
 type AuthResponse struct {
-	AccessToken           string      `json:"access_token"`
-	RefreshToken          string      `json:"refresh_token"`
-	AccessTokenExpiresAt  int64       `json:"access_token_expires_at"`
-	RefreshTokenExpiresAt int64       `json:"refresh_token_expires_at"`
-	User                  models.User `json:"user"`
+	Token struct {
+		AccessToken           string `json:"access_token"`
+		RefreshToken          string `json:"refresh_token"`
+		AccessTokenExpiresAt  int64  `json:"access_token_expires_at"`
+		RefreshTokenExpiresAt int64  `json:"refresh_token_expires_at"`
+	} `json:"tokens"`
+	User models.User `json:"user"`
 }
 
 func (s *AuthService) Signup(req SignupRequest) (*AuthResponse, error) {
@@ -158,11 +160,18 @@ func (s *AuthService) Signup(req SignupRequest) (*AuthResponse, error) {
 	}
 
 	return &AuthResponse{
-		AccessToken:           tokenPair.AccessToken,
-		RefreshToken:          tokenPair.RefreshToken,
-		AccessTokenExpiresAt:  tokenPair.AccessTokenExpiresAt,
-		RefreshTokenExpiresAt: tokenPair.RefreshTokenExpiresAt,
-		User:                  user,
+		Token: struct {
+			AccessToken           string `json:"access_token"`
+			RefreshToken          string `json:"refresh_token"`
+			AccessTokenExpiresAt  int64  `json:"access_token_expires_at"`
+			RefreshTokenExpiresAt int64  `json:"refresh_token_expires_at"`
+		}{
+			AccessToken:           tokenPair.AccessToken,
+			RefreshToken:          tokenPair.RefreshToken,
+			AccessTokenExpiresAt:  tokenPair.AccessTokenExpiresAt,
+			RefreshTokenExpiresAt: tokenPair.RefreshTokenExpiresAt,
+		},
+		User: user,
 	}, nil
 }
 
@@ -205,11 +214,18 @@ func (s *AuthService) Login(req LoginRequest) (*AuthResponse, error) {
 	}
 
 	return &AuthResponse{
-		AccessToken:           tokenPair.AccessToken,
-		RefreshToken:          tokenPair.RefreshToken,
-		AccessTokenExpiresAt:  tokenPair.AccessTokenExpiresAt,
-		RefreshTokenExpiresAt: tokenPair.RefreshTokenExpiresAt,
-		User:                  user,
+		Token: struct {
+			AccessToken           string `json:"access_token"`
+			RefreshToken          string `json:"refresh_token"`
+			AccessTokenExpiresAt  int64  `json:"access_token_expires_at"`
+			RefreshTokenExpiresAt int64  `json:"refresh_token_expires_at"`
+		}{
+			AccessToken:           tokenPair.AccessToken,
+			RefreshToken:          tokenPair.RefreshToken,
+			AccessTokenExpiresAt:  tokenPair.AccessTokenExpiresAt,
+			RefreshTokenExpiresAt: tokenPair.RefreshTokenExpiresAt,
+		},
+		User: user,
 	}, nil
 }
 
@@ -261,11 +277,18 @@ func (s *AuthService) RefreshToken(req RefreshRequest) (*AuthResponse, error) {
 	}
 
 	return &AuthResponse{
-		AccessToken:           tokenPair.AccessToken,
-		RefreshToken:          tokenPair.RefreshToken,
-		AccessTokenExpiresAt:  tokenPair.AccessTokenExpiresAt,
-		RefreshTokenExpiresAt: tokenPair.RefreshTokenExpiresAt,
-		User:                  user,
+		Token: struct {
+			AccessToken           string `json:"access_token"`
+			RefreshToken          string `json:"refresh_token"`
+			AccessTokenExpiresAt  int64  `json:"access_token_expires_at"`
+			RefreshTokenExpiresAt int64  `json:"refresh_token_expires_at"`
+		}{
+			AccessToken:           tokenPair.AccessToken,
+			RefreshToken:          tokenPair.RefreshToken,
+			AccessTokenExpiresAt:  tokenPair.AccessTokenExpiresAt,
+			RefreshTokenExpiresAt: tokenPair.RefreshTokenExpiresAt,
+		},
+		User: user,
 	}, nil
 }
 

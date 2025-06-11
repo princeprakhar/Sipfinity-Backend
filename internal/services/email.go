@@ -87,7 +87,7 @@ func (s *EmailService) SendPasswordResetEmail(email, resetToken, baseURL string)
             <p style="text-align: center;">
                 <a href="%s" class="button">Reset Password</a>
             </p>
-            <p>Or copy and paste this link in your browser:</p>
+            <p>Or copy and paste this token on website to reset:</p>
             <p style="word-break: break-all; background-color: #f0f0f0; padding: 10px; border-radius: 4px;">%s</p>
             
             <div class="warning">
@@ -101,11 +101,11 @@ func (s *EmailService) SendPasswordResetEmail(email, resetToken, baseURL string)
         </div>
         <div class="footer">
             <p>This is an automated message, please do not reply to this email.</p>
-            <p>&copy; 2025 Your Company Name. All rights reserved.</p>
+            <p>&copy; 2025 Sipfinity. All rights reserved.</p>
         </div>
     </div>
 </body>
-</html>`, email, resetLink, resetLink)
+</html>`, email, resetLink, resetToken)
 
 	return s.SendEmail(email, subject, body)
 }
