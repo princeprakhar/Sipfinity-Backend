@@ -50,7 +50,7 @@ func (s *EmailService) SendProductUploadNotification(adminEmail, filePath string
 }
 
 func (s *EmailService) SendPasswordResetEmail(email, resetToken, baseURL string) error {
-	resetLink := fmt.Sprintf("%s/reset-password?token=%s", baseURL, resetToken)
+	resetLink := fmt.Sprintf("%s/validate-token", baseURL)
 
 	subject := "Password Reset Request"
 	body := fmt.Sprintf(`
