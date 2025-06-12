@@ -56,6 +56,7 @@ type SignupRequest struct {
 type LoginRequest struct {
 	Email    string `json:"email" binding:"required"`
 	Password string `json:"password" binding:"required"`
+	IsAdmin  bool   `json:"is_admin"` // Optional, for admin login
 }
 
 type RefreshRequest struct {
@@ -180,6 +181,13 @@ func (s *AuthService) Login(req LoginRequest) (*AuthResponse, error) {
 	if !utils.IsValidEmail(req.Email) {
 		return nil, errors.New("invalid email format")
 	}
+	
+	var role string
+	if req.IsAdmin {
+		role = "admin"
+	} else {
+		role = "customer"
+	}
 
 	// Find user
 	var user models.User
@@ -188,7 +196,11 @@ func (s *AuthService) Login(req LoginRequest) (*AuthResponse, error) {
 	}
 
 	// Check password
-	if !user.CheckPassword(req.Password) {
+	if !user.CheckPassword(req.Password)  {
+		return nil, errors.New("invalid credentials")
+	}
+
+	if user.Role != role {
 		return nil, errors.New("invalid credentials")
 	}
 
