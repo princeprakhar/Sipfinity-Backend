@@ -34,6 +34,13 @@ type ChangePasswordRequest struct {
     NewPassword     string `json:"new_password" binding:"required"`
 }
 
+type UpdateProfileRequest struct {
+	FirstName   string `json:"first_name"`
+	LastName    string `json:"last_name"`
+	Email      string `json:"email" binding:"required,email"`
+	PhoneNumber string `json:"phone_number"`
+}
+
 func NewAuthService(db *gorm.DB, jwtSecret string, validationService *ValidationService, emailService *EmailService, baseURL string) *AuthService {
 	return &AuthService{
 		db:                db,
@@ -447,4 +454,49 @@ func (s *AuthService) ValidateResetToken(token string) (*models.User, error) {
     }
 
     return &user, nil
+}
+
+
+
+
+func (s *AuthService) UpdateProfile(userID uint, req UpdateProfileRequest) (*models.User, error) {
+	// Validate email format
+	if !utils.IsValidEmail(req.Email) && s.validationService != nil {
+		// If validation service is available, use it to validate email
+		emailValid, err := s.validationService.IsEmailValid(req.Email)
+		if err != nil {
+			return nil, fmt.Errorf("email validation failed: %v", err)
+		}
+		if !emailValid {
+			return nil, errors.New("invalid email format")
+		}
+	}
+
+	
+	// Validate phone number if provided
+	if req.PhoneNumber != "" && s.validationService != nil {
+		phoneValid, err := s.validationService.IsPhoneValid(req.PhoneNumber)
+		if err != nil {
+			return nil, fmt.Errorf("phone validation failed: %v", err)
+		}
+		if !phoneValid {
+			return nil, errors.New("phone number is not valid")
+		}
+	}
+
+	var user models.User
+	if err := s.db.Where("id = ? AND is_active = ?", userID, true).First(&user).Error; err != nil {
+		return nil, errors.New("user not found")
+	}
+
+	user.FirstName = utils.SanitizeString(req.FirstName)
+	user.LastName = utils.SanitizeString(req.LastName)
+	user.Email = utils.SanitizeString(req.Email)
+	user.PhoneNumber = utils.SanitizeString(req.PhoneNumber)
+
+	if err := s.db.Save(&user).Error; err != nil {
+		return nil, errors.New("failed to update profile")
+	}
+
+	return &user, nil
 }

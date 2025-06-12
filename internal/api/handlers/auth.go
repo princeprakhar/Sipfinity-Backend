@@ -113,3 +113,23 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		"message": "Logged out successfully",
 	})
 }
+
+
+
+
+func (h *AuthHandler) UpdateProfile(c *gin.Context) {
+	var req services.UpdateProfileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.SendValidationError(c, "Invalid request data")
+		return
+	}
+
+	userID := c.GetUint("user_id")
+	response, err := h.authService.UpdateProfile(userID, req)
+	if err != nil {
+		utils.SendError(c, http.StatusBadRequest, "Profile update failed", err)
+		return
+	}
+
+	utils.SendSuccess(c, "Profile updated successfully", response)
+}

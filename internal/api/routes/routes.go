@@ -55,6 +55,7 @@ func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		auth.POST("/logout", middleware.AuthMiddleware(cfg), authHandler.Logout)
 		auth.POST("/refresh-token", authHandler.RefreshToken)
 		auth.GET("/profile", middleware.AuthMiddleware(cfg), authHandler.GetProfile)
+		auth.PUT("/profile-update", middleware.AuthMiddleware(cfg), authHandler.UpdateProfile)
 	}
 
 	// Password reset routes
