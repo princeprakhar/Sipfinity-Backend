@@ -20,7 +20,11 @@ type Config struct {
 	RateLimitBurst            int
 	AbstractEmailAPIKey       string
 	AbstractPhoneNumberAPIKey string
-	BaseURL                   string // Base URL for the application, used in email links
+	BaseURL                   string 
+	S3BucketName              string
+	S3Region                  string
+	S3AccessKey               string
+	S3SecretKey               string // Base URL for the application, used in email links
 }
 
 func Load() *Config {
@@ -44,6 +48,10 @@ func Load() *Config {
 		AbstractEmailAPIKey:       getEnv("ABSTRACT_EMAIL_API_KEY", ""),
 		AbstractPhoneNumberAPIKey: getEnv("ABSTRACT_PHONE_NUMBER_API_KEY", ""),
 		BaseURL:                   getEnv("BASE_URL", "http://localhost:8080"),
+		S3BucketName:              getEnv("S3_BUCKET_NAME", "your-s3-bucket-name"),
+		S3Region:                  getEnv("S3_REGION", "us-east-1"),
+		S3AccessKey:               getEnv("S3_ACCESS_KEY", ""),
+		S3SecretKey:               getEnv("S3_SECRET_KEY", ""),
 	}
 }
 

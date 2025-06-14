@@ -23,6 +23,7 @@ func Init(databaseURL string) (*gorm.DB, error) {
 		&models.RefreshToken{},
 		&models.PasswordResetToken{},
 		&models.ReviewLike{},
+		&models.Image{},
 	)
 	if err != nil {
 		return nil, err

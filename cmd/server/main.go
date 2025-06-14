@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 
@@ -23,6 +24,8 @@ func main() {
 
 	// Load configuration
 	cfg := config.Load()
+	fmt.Printf("Configuration loaded successfully: %+v\n", cfg)
+
 
 	// Initialize database
 	db, err := database.Init(cfg.DatabaseURL)

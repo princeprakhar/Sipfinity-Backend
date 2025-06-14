@@ -29,15 +29,17 @@ func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	emailService := services.NewEmailService(cfg)
 	authService := services.NewAuthService(db, cfg.JWTSecret, validationService, emailService, cfg.BaseURL)
 	reviewService := services.NewReviewService(db)
+	productService := services.NewProductService(db)
 	
 	fastAPIService := services.NewFastAPIService(cfg)
-	adminService := services.NewAdminService(db, fastAPIService, emailService)
+	adminService := services.NewAdminService(db,cfg, fastAPIService, emailService)
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(authService)
 	passwordHandler := handlers.NewPasswordHandler(authService)
 	reviewHandler := handlers.NewReviewHandler(reviewService)
 	adminHandler := handlers.NewAdminHandler(adminService)
+	productHandler := handlers.NewProductHandler(productService)
 
 	// Health check
 	router.GET("/health", func(c *gin.Context) {
@@ -75,17 +77,32 @@ func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		reviews.POST("/:review_id/flag", middleware.AuthMiddleware(cfg), middleware.CustomerOrAdmin(), reviewHandler.FlagReview)
 	}
 
+
+	// Product routes
+	products := api.Group("/products")
+	{
+		products.GET("/", productHandler.GetAllProducts)
+		products.GET("/:product_id", productHandler.GetProduct)
+	}
+
 	// Admin routes
 	admin := api.Group("/admin", middleware.AuthMiddleware(cfg), middleware.AdminOnly())
 	{
 		admin.GET("/dashboard", adminHandler.GetDashboard)
 		
 		// Product management
-		admin.POST("/upload/images", adminHandler.UploadImages)
-		admin.POST("/upload/csv", adminHandler.UploadCSV)
+		// admin.POST("/upload/images", adminHandler.UploadImages)
+		// admin.POST("/upload/csv", adminHandler.UploadCSV)
 		admin.GET("/products", adminHandler.GetProducts)
+		admin.POST("/products", adminHandler.CreateProduct)
+		admin.GET("/products/:product_id", adminHandler.GetProduct)
+
 		admin.PUT("/products/:product_id", adminHandler.UpdateProduct)
+		admin.POST("/products/:product_id/images", adminHandler.UploadProductImages)
+		admin.DELETE("/products/:product_id/images/:image_id", adminHandler.DeleteProductImage)
+		admin.DELETE("/products/batch", adminHandler.BatchDeleteProducts)
 		admin.DELETE("/products/:product_id", adminHandler.DeleteProduct)
+		admin.GET("/products/search", adminHandler.SearchProducts)
 
 		// Review moderation
 		admin.GET("/reviews/flagged", reviewHandler.GetFlaggedReviews)
