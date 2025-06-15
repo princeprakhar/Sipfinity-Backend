@@ -1,11 +1,12 @@
 package handlers
 
 import (
+	"encoding/json"
+	"fmt"
+	"mime/multipart"
 	"net/http"
 	"strconv"
 	"strings"
-	"mime/multipart"
-	"fmt"
 
 	"github.com/gin-gonic/gin"
 	"github.com/princeprakhar/ecommerce-backend/internal/models"
@@ -34,12 +35,18 @@ func (h *AdminHandler) CreateProduct(c *gin.Context) {
 		}
 	} else {
 		// Handle multipart form data
-		productReq.Name = c.PostForm("name")
+		productReq.Title = c.PostForm("title")
 		productReq.Description = c.PostForm("description")
 		productReq.Category = c.PostForm("category")
-		productReq.Brand = c.PostForm("brand")
-		productReq.SKU = c.PostForm("sku")
-		
+		productReq.Status = c.PostForm("status")
+		productReq.Material = c.PostForm("material")
+		productReq.Size = c.PostForm("size")
+		if servicesStr := c.PostForm("services"); servicesStr != "" {
+			if err := json.Unmarshal([]byte(servicesStr), &productReq.Services); err != nil {
+				utils.SendValidationError(c, "Invalid services format")
+				return
+			}
+		}
 		// Parse price
 		if priceStr := c.PostForm("price"); priceStr != "" {
 			price, err := strconv.ParseFloat(priceStr, 64)
@@ -62,8 +69,8 @@ func (h *AdminHandler) CreateProduct(c *gin.Context) {
 	}
 
 	// Validate required fields
-	if productReq.Name == "" {
-		utils.SendValidationError(c, "Product name is required")
+	if productReq.Title == "" {
+		utils.SendValidationError(c, "Product title is required")
 		return
 	}
 	if productReq.Price <= 0 {
@@ -111,8 +118,8 @@ func (h *AdminHandler) UpdateProduct(c *gin.Context) {
 		}
 	} else {
 		// Handle multipart form data
-		if name := c.PostForm("name"); name != "" {
-			updateReq.Name = &name
+		if title := c.PostForm("title"); title != "" {
+			updateReq.Title = &title
 		}
 		if description := c.PostForm("description"); description != "" {
 			updateReq.Description = &description
@@ -120,11 +127,18 @@ func (h *AdminHandler) UpdateProduct(c *gin.Context) {
 		if category := c.PostForm("category"); category != "" {
 			updateReq.Category = &category
 		}
-		if brand := c.PostForm("brand"); brand != "" {
-			updateReq.Brand = &brand
+		if material := c.PostForm("material"); material != "" {
+			updateReq.Material = &material
 		}
-		if sku := c.PostForm("sku"); sku != "" {
-			updateReq.SKU = &sku
+		if status := c.PostForm("status"); status != "" {
+			updateReq.Status = &status
+		}
+		// Parse services
+		if servicesStr := c.PostForm("services"); servicesStr != "" {
+			if err := json.Unmarshal([]byte(servicesStr), &updateReq.Services); err != nil {
+				utils.SendValidationError(c, "Invalid services format")
+				return
+			}
 		}
 		
 		// Parse price
@@ -136,6 +150,8 @@ func (h *AdminHandler) UpdateProduct(c *gin.Context) {
 			}
 			updateReq.Price = &price
 		}
+
+
 		
 		// Parse stock
 		if stockStr := c.PostForm("stock"); stockStr != "" {
@@ -147,15 +163,6 @@ func (h *AdminHandler) UpdateProduct(c *gin.Context) {
 			updateReq.Stock = &stock
 		}
 		
-		// Parse is_active
-		if isActiveStr := c.PostForm("is_active"); isActiveStr != "" {
-			isActive, err := strconv.ParseBool(isActiveStr)
-			if err != nil {
-				utils.SendValidationError(c, "Invalid is_active format")
-				return
-			}
-			updateReq.IsActive = &isActive
-		}
 
 		// Handle image uploads
 		form, err := c.MultipartForm()
@@ -180,7 +187,7 @@ func (h *AdminHandler) UpdateProduct(c *gin.Context) {
 	}
 
 	// Update product
-	product, err := h.adminService.UpdateProduct(uint(productID), &updateReq, imageFiles, deleteImageIDs)
+	product, err := h.adminService.UpdateProduct(c.Request.Context(),uint(productID), &updateReq, imageFiles, deleteImageIDs)
 	if err != nil {
 		utils.SendError(c, http.StatusBadRequest, "Failed to update product", err)
 		return
@@ -212,7 +219,7 @@ func (h *AdminHandler) UploadProductImages(c *gin.Context) {
 
 	// Use the update method to add images
 	updateReq := models.UpdateProductRequest{} // Empty update request
-	product, err := h.adminService.UpdateProduct(uint(productID), &updateReq, images, nil)
+	product, err := h.adminService.UpdateProduct(c.Request.Context(),uint(productID), &updateReq, images, nil)
 	if err != nil {
 		utils.SendError(c, http.StatusBadRequest, "Failed to upload images", err)
 		return
@@ -234,7 +241,7 @@ func (h *AdminHandler) DeleteProductImage(c *gin.Context) {
 
 	// Use the update method to delete specific image
 	updateReq := models.UpdateProductRequest{} // Empty update request
-	product, err := h.adminService.UpdateProduct(uint(productID), &updateReq, nil, []string{imageIDStr})
+	product, err := h.adminService.UpdateProduct(c.Request.Context(),uint(productID), &updateReq, nil, []string{imageIDStr})
 	if err != nil {
 		utils.SendError(c, http.StatusBadRequest, "Failed to delete image", err)
 		return
@@ -306,7 +313,7 @@ func (h *AdminHandler) GetProduct(c *gin.Context) {
 	}
 
 	// You'll need to add this method to AdminService
-	product, err := h.adminService.GetProductByID(uint(productID))
+	product, err := h.adminService.GetProductByID( c.Request.Context(), uint(productID))
 	if err != nil {
 		utils.SendError(c, http.StatusNotFound, "Product not found", err)
 		return
@@ -323,7 +330,7 @@ func (h *AdminHandler) DeleteProduct(c *gin.Context) {
 		return
 	}
 
-	err = h.adminService.DeleteProduct(uint(productID))
+	err = h.adminService.DeleteProduct(c.Request.Context(),uint(productID))
 	if err != nil {
 		utils.SendError(c, http.StatusBadRequest, "Failed to delete product", err)
 		return
@@ -357,7 +364,7 @@ func (h *AdminHandler) BatchDeleteProducts(c *gin.Context) {
 	successCount := 0
 
 	for _, productID := range request.ProductIDs {
-		if err := h.adminService.DeleteProduct(productID); err != nil {
+		if err := h.adminService.DeleteProduct(c.Request.Context(),productID); err != nil {
 			errors = append(errors, fmt.Sprintf("Product %d: %v", productID, err))
 		} else {
 			successCount++

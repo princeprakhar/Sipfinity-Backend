@@ -83,6 +83,7 @@ func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	{
 		products.GET("/", productHandler.GetAllProducts)
 		products.GET("/:product_id", productHandler.GetProduct)
+		products.GET("/category",productHandler.GetCategories)
 	}
 
 	// Admin routes
