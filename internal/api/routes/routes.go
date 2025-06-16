@@ -73,6 +73,8 @@ func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	{
 		reviews.GET("/product/:product_id",middleware.AuthMiddleware(cfg), reviewHandler.GetProductReviews)
 		reviews.POST("/", middleware.AuthMiddleware(cfg), reviewHandler.CreateReview)
+		reviews.POST("/product/like/:product_id",middleware.AuthMiddleware(cfg),reviewHandler.LikeOrDislikeProduct)
+		reviews.GET("/product/like/:product_id",middleware.AuthMiddleware(cfg),reviewHandler.GetProductReaction)
 		reviews.POST("/:review_id/like", middleware.AuthMiddleware(cfg), reviewHandler.LikeReview)
 		reviews.POST("/:review_id/flag", middleware.AuthMiddleware(cfg), middleware.CustomerOrAdmin(), reviewHandler.FlagReview)
 	}

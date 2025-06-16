@@ -25,6 +25,7 @@ func Init(databaseURL string) (*gorm.DB, error) {
 		&models.ReviewLike{},
 		&models.Image{},
 		&models.Service{},
+		&models.ProductReaction{},
 	)
 	if err != nil {
 		return nil, err

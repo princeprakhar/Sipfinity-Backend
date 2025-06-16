@@ -21,6 +21,8 @@ type Product struct {
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 	Images      []Image   `json:"images" gorm:"foreignKey:ProductID;constraint:OnDelete:CASCADE"`
+	LikeCount    int  `gorm:"default:0"`
+	DislikeCount int  `gorm:"default:0"`
 
 	// Fixed Services relationship
 	Services []Service `json:"services,omitempty" gorm:"foreignKey:ProductID;constraint:OnDelete:CASCADE"`
@@ -28,6 +30,15 @@ type Product struct {
 	// Relations
 	Reviews []Review `json:"reviews,omitempty"`
 }
+type ProductReaction struct {
+	ID         uint `gorm:"primaryKey"`
+	UserID     uint
+	ProductID  uint
+	IsLike     bool 
+	IsDislike  bool
+	CreatedAt  time.Time
+}
+
 
 // Fixed Service struct (singular name)
 type Service struct {

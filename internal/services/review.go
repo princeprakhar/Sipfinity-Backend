@@ -6,6 +6,7 @@ import (
 	"github.com/princeprakhar/ecommerce-backend/internal/models"
 	"github.com/princeprakhar/ecommerce-backend/internal/utils"
 	"gorm.io/gorm"
+	"time"
 )
 
 type ReviewService struct {
@@ -22,6 +23,12 @@ type CreateReviewRequest struct {
 	Comment   string `json:"comment"`
 }
 
+type CreateLikeRequest struct {
+	Like    bool `json:"like"`
+	DisLike bool `json:"dislike"`
+}
+
+
 type ReviewResponse struct {
 	ID           uint   `json:"id"`
 	UserID       uint   `json:"user_id"`
@@ -33,6 +40,84 @@ type ReviewResponse struct {
 	LikeCount    int    `json:"like_count"`
 	DislikeCount int    `json:"dislike_count"`
 }
+
+// services/review_service.go
+func (s *ReviewService) GetProductReaction(userID, productID uint) (*models.ProductReaction, error) {
+	var reaction models.ProductReaction
+	if err := s.db.Where("user_id = ? AND product_id = ?", userID, productID).First(&reaction).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &models.ProductReaction{IsLike: false, IsDislike: false}, nil
+		}
+		return nil, errors.New("failed to fetch product reaction")
+	}
+	return &reaction, nil
+}
+
+
+
+func (s *ReviewService) LikeOrDislikeProduct(userID, productID uint, req CreateLikeRequest) error {
+	var product models.Product
+	if err := s.db.Where("id = ? AND status = ?", productID, "active").First(&product).Error; err != nil {
+		return errors.New("product not found")
+	}
+
+	var reaction models.ProductReaction
+	err := s.db.Where("user_id = ? AND product_id = ?", userID, productID).First(&reaction).Error
+
+	if err == nil {
+		// Update existing reaction
+		if reaction.IsLike && !req.Like {
+			product.LikeCount -= 1
+		}
+		if reaction.IsDislike && !req.DisLike {
+			product.DislikeCount -= 1
+		}
+		if !reaction.IsLike && req.Like {
+			product.LikeCount += 1
+		}
+		if !reaction.IsDislike && req.DisLike {
+			product.DislikeCount += 1
+		}
+
+		reaction.IsLike = req.Like
+		reaction.IsDislike = req.DisLike
+
+		if err := s.db.Save(&reaction).Error; err != nil {
+			return errors.New("failed to update reaction")
+		}
+	} else if errors.Is(err, gorm.ErrRecordNotFound) {
+		// New reaction
+		newReaction := models.ProductReaction{
+			UserID:     userID,
+			ProductID:  productID,
+			IsLike:     req.Like,
+			IsDislike:  req.DisLike,
+			CreatedAt:  time.Now(),
+		}
+
+		if req.Like {
+			product.LikeCount += 1
+		}
+		if req.DisLike {
+			product.DislikeCount += 1
+		}
+
+		if err := s.db.Create(&newReaction).Error; err != nil {
+			return errors.New("failed to create reaction")
+		}
+	} else {
+		return errors.New("failed to fetch existing reaction")
+	}
+
+	// Save updated like/dislike count on product
+	if err := s.db.Save(&product).Error; err != nil {
+		return errors.New("failed to update product counts")
+	}
+
+	return nil
+}
+
+
 
 func (s *ReviewService) CreateReview(userID uint, req CreateReviewRequest) (*models.Review, error) {
 	// Validate rating

@@ -16,6 +16,61 @@ func NewReviewHandler(reviewService *services.ReviewService) *ReviewHandler {
 	return &ReviewHandler{reviewService: reviewService}
 }
 
+// handlers/review_handler.go
+// Handler
+func (h *ReviewHandler) GetProductReaction(c *gin.Context) {
+	userID := c.GetUint("user_id")
+
+	productIDStr := c.Param("product_id")
+	productID, err := strconv.ParseUint(productIDStr, 10, 64)
+	if err != nil {
+		utils.SendError(c, 400, "invalid product id", err)
+		return
+	}
+
+	reaction, err := h.reviewService.GetProductReaction(userID, uint(productID))
+	if err != nil {
+		utils.SendError(c, 400, err.Error(), err)
+		return
+	}
+
+	c.JSON(200, gin.H{
+		"success": true,
+		"data": gin.H{
+			"liked":    reaction.IsLike,
+			"disliked": reaction.IsDislike,
+		},
+	})
+}
+
+
+
+func (h *ReviewHandler) LikeOrDislikeProduct(c *gin.Context) {
+	userID := c.GetUint("user_id") // assuming middleware sets this
+	productIDParam := c.Param("product_id")
+	
+	productIDUint, err := strconv.ParseUint(productIDParam, 10, 64)
+	if err != nil {
+		utils.SendError(c, 400, "invalid product ID", err)
+		return
+	}
+
+	var req services.CreateLikeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.SendValidationError(c, "Invalid request data")
+		return
+	}
+
+	err = h.reviewService.LikeOrDislikeProduct(uint(userID), uint(productIDUint), req)
+	if err != nil {
+		utils.SendError(c, 400, err.Error(), nil)
+		return
+	}
+
+	utils.SendSuccess(c, "Reaction updated successfully", nil)
+}
+
+
 func (h *ReviewHandler) CreateReview(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	
