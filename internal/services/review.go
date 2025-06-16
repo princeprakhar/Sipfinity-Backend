@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+
 	"github.com/princeprakhar/ecommerce-backend/internal/models"
 	"github.com/princeprakhar/ecommerce-backend/internal/utils"
 	"gorm.io/gorm"
@@ -17,20 +18,20 @@ func NewReviewService(db *gorm.DB) *ReviewService {
 
 type CreateReviewRequest struct {
 	ProductID uint   `json:"product_id" binding:"required"`
-	Rating    int    `json:"rating" binding:"required"`
+	Rating    int    `json:"rating"`
 	Comment   string `json:"comment"`
 }
 
 type ReviewResponse struct {
-	ID        uint   `json:"id"`
-	UserID    uint   `json:"user_id"`
-	ProductID uint   `json:"product_id"`
-	Rating    int    `json:"rating"`
-	Comment   string `json:"comment"`
-	UserName  string `json:"user_name"`
-	CreatedAt string `json:"created_at"`
-	LikeCount int    `json:"like_count"`
-	DislikeCount int `json:"dislike_count"`
+	ID           uint   `json:"id"`
+	UserID       uint   `json:"user_id"`
+	ProductID    uint   `json:"product_id"`
+	Rating       int    `json:"rating"`
+	Comment      string `json:"comment"`
+	UserName     string `json:"user_name"`
+	CreatedAt    string `json:"created_at"`
+	LikeCount    int    `json:"like_count"`
+	DislikeCount int    `json:"dislike_count"`
 }
 
 func (s *ReviewService) CreateReview(userID uint, req CreateReviewRequest) (*models.Review, error) {
@@ -41,18 +42,29 @@ func (s *ReviewService) CreateReview(userID uint, req CreateReviewRequest) (*mod
 
 	// Check if product exists
 	var product models.Product
-	if err := s.db.Where("id = ? AND is_active = ?", req.ProductID, true).First(&product).Error; err != nil {
+	if err := s.db.Where("id = ? AND status = ?", req.ProductID, "active").First(&product).Error; err != nil {
 		return nil, errors.New("product not found")
 	}
 
 	// Check if user already reviewed this product
-	var existingReview models.Review
-	if err := s.db.Where("user_id = ? AND product_id = ?", userID, req.ProductID).First(&existingReview).Error; err == nil {
-		return nil, errors.New("you have already reviewed this product")
+	var review models.Review
+	if err := s.db.Where("user_id = ? AND product_id = ?", userID, req.ProductID).First(&review).Error; err == nil {
+		// Review exists — update it
+		review.Rating = req.Rating
+		review.Comment = utils.SanitizeString(req.Comment)
+		review.IsActive = true
+
+		if err := s.db.Save(&review).Error; err != nil {
+			return nil, errors.New("failed to update existing review")
+		}
+
+		// Preload user and product info
+		s.db.Preload("User").Preload("Product").First(&review, review.ID)
+		return &review, nil
 	}
 
-	// Create review
-	review := models.Review{
+	// If not found, create a new review
+	review = models.Review{
 		UserID:    userID,
 		ProductID: req.ProductID,
 		Rating:    req.Rating,
@@ -64,13 +76,18 @@ func (s *ReviewService) CreateReview(userID uint, req CreateReviewRequest) (*mod
 		return nil, errors.New("failed to create review")
 	}
 
-	// Preload user information
-	s.db.Preload("User").First(&review, review.ID)
-
+	s.db.Preload("User").Preload("Product").First(&review, review.ID)
 	return &review, nil
 }
 
+
 func (s *ReviewService) GetProductReviews(productID uint, page, limit int) ([]ReviewResponse, error) {
+	// First check if product exists
+	var product models.Product
+	if err := s.db.Where("id = ? AND status = ?", productID, "active").First(&product).Error; err != nil {
+		return nil, errors.New("product not found")
+	}
+
 	var reviews []models.Review
 	offset := (page - 1) * limit
 
@@ -81,7 +98,7 @@ func (s *ReviewService) GetProductReviews(productID uint, page, limit int) ([]Re
 		Limit(limit)
 
 	if err := query.Find(&reviews).Error; err != nil {
-		return nil, err
+		return nil, errors.New("failed to fetch reviews")
 	}
 
 	var response []ReviewResponse
@@ -91,13 +108,19 @@ func (s *ReviewService) GetProductReviews(productID uint, page, limit int) ([]Re
 		s.db.Model(&models.ReviewLike{}).Where("review_id = ? AND is_like = ?", review.ID, true).Count(&likeCount)
 		s.db.Model(&models.ReviewLike{}).Where("review_id = ? AND is_like = ?", review.ID, false).Count(&dislikeCount)
 
+		// Handle case where User might be nil
+		userName := "Anonymous"
+		if review.User.ID != 0 {
+			userName = review.User.FirstName + " " + review.User.LastName
+		}
+
 		reviewResp := ReviewResponse{
 			ID:           review.ID,
 			UserID:       review.UserID,
 			ProductID:    review.ProductID,
 			Rating:       review.Rating,
 			Comment:      review.Comment,
-			UserName:     review.User.FirstName + " " + review.User.LastName,
+			UserName:     userName,
 			CreatedAt:    review.CreatedAt.Format("2006-01-02 15:04:05"),
 			LikeCount:    int(likeCount),
 			DislikeCount: int(dislikeCount),
@@ -109,10 +132,13 @@ func (s *ReviewService) GetProductReviews(productID uint, page, limit int) ([]Re
 }
 
 func (s *ReviewService) LikeReview(userID, reviewID uint, isLike bool) error {
-	// Check if review exists
+	// Check if review exists and is active
 	var review models.Review
 	if err := s.db.Where("id = ? AND is_active = ?", reviewID, true).First(&review).Error; err != nil {
-		return errors.New("review not found")
+		if err == gorm.ErrRecordNotFound {
+			return errors.New("review not found")
+		}
+		return errors.New("failed to find review")
 	}
 
 	// Check existing like/dislike
@@ -122,7 +148,10 @@ func (s *ReviewService) LikeReview(userID, reviewID uint, isLike bool) error {
 	if err == nil {
 		// Update existing like/dislike
 		existingLike.IsLike = isLike
-		return s.db.Save(&existingLike).Error
+		if err := s.db.Save(&existingLike).Error; err != nil {
+			return errors.New("failed to update like/dislike")
+		}
+		return nil
 	} else if err == gorm.ErrRecordNotFound {
 		// Create new like/dislike
 		newLike := models.ReviewLike{
@@ -130,14 +159,31 @@ func (s *ReviewService) LikeReview(userID, reviewID uint, isLike bool) error {
 			ReviewID: reviewID,
 			IsLike:   isLike,
 		}
-		return s.db.Create(&newLike).Error
+		if err := s.db.Create(&newLike).Error; err != nil {
+			return errors.New("failed to create like/dislike")
+		}
+		return nil
 	}
 
-	return err
+	return errors.New("failed to process like/dislike")
 }
 
 func (s *ReviewService) FlagReview(reviewID uint) error {
-	return s.db.Model(&models.Review{}).Where("id = ?", reviewID).Update("is_flagged", true).Error
+	// Check if review exists and is active
+	var review models.Review
+	if err := s.db.Where("id = ? AND is_active = ?", reviewID, true).First(&review).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return errors.New("review not found")
+		}
+		return errors.New("failed to find review")
+	}
+
+	// Update the review to flagged
+	if err := s.db.Model(&models.Review{}).Where("id = ?", reviewID).Update("is_flagged", true).Error; err != nil {
+		return errors.New("failed to flag review")
+	}
+
+	return nil
 }
 
 func (s *ReviewService) GetFlaggedReviews() ([]models.Review, error) {
@@ -145,16 +191,36 @@ func (s *ReviewService) GetFlaggedReviews() ([]models.Review, error) {
 	err := s.db.Preload("User").Preload("Product").
 		Where("is_flagged = ? AND is_active = ?", true, true).
 		Find(&reviews).Error
-	return reviews, err
+
+	if err != nil {
+		return nil, errors.New("failed to fetch flagged reviews")
+	}
+
+	return reviews, nil
 }
 
 func (s *ReviewService) ModerateReview(reviewID uint, action string) error {
+	// Check if review exists
+	var review models.Review
+	if err := s.db.Where("id = ?", reviewID).First(&review).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return errors.New("review not found")
+		}
+		return errors.New("failed to find review")
+	}
+
 	switch action {
 	case "approve":
-		return s.db.Model(&models.Review{}).Where("id = ?", reviewID).Update("is_flagged", false).Error
+		if err := s.db.Model(&models.Review{}).Where("id = ?", reviewID).Update("is_flagged", false).Error; err != nil {
+			return errors.New("failed to approve review")
+		}
+		return nil
 	case "remove":
-		return s.db.Model(&models.Review{}).Where("id = ?", reviewID).Update("is_active", false).Error
+		if err := s.db.Model(&models.Review{}).Where("id = ?", reviewID).Update("is_active", false).Error; err != nil {
+			return errors.New("failed to remove review")
+		}
+		return nil
 	default:
-		return errors.New("invalid action")
+		return errors.New("invalid action, use 'approve' or 'remove'")
 	}
 }

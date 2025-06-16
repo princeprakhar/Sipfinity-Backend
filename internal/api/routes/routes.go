@@ -71,9 +71,9 @@ func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	// Review routes
 	reviews := api.Group("/reviews")
 	{
-		reviews.GET("/product/:product_id", reviewHandler.GetProductReviews)
-		reviews.POST("/", middleware.AuthMiddleware(cfg), middleware.CustomerOrAdmin(), reviewHandler.CreateReview)
-		reviews.POST("/:review_id/like", middleware.AuthMiddleware(cfg), middleware.CustomerOrAdmin(), reviewHandler.LikeReview)
+		reviews.GET("/product/:product_id",middleware.AuthMiddleware(cfg), reviewHandler.GetProductReviews)
+		reviews.POST("/", middleware.AuthMiddleware(cfg), reviewHandler.CreateReview)
+		reviews.POST("/:review_id/like", middleware.AuthMiddleware(cfg), reviewHandler.LikeReview)
 		reviews.POST("/:review_id/flag", middleware.AuthMiddleware(cfg), middleware.CustomerOrAdmin(), reviewHandler.FlagReview)
 	}
 
@@ -81,9 +81,9 @@ func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	// Product routes
 	products := api.Group("/products")
 	{
-		products.GET("/", productHandler.GetAllProducts)
-		products.GET("/:product_id", productHandler.GetProduct)
-		products.GET("/category",productHandler.GetCategories)
+		products.GET("/", middleware.AuthMiddleware(cfg),productHandler.GetAllProducts)
+		products.GET("/:product_id", middleware.AuthMiddleware(cfg),productHandler.GetProduct)
+		products.GET("/category",middleware.AuthMiddleware(cfg),productHandler.GetCategories)
 	}
 
 	// Admin routes
