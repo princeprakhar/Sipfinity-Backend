@@ -10,6 +10,7 @@ import (
 	"github.com/princeprakhar/ecommerce-backend/internal/models"
 	"github.com/princeprakhar/ecommerce-backend/internal/utils"
 	"gorm.io/gorm"
+	"github.com/princeprakhar/ecommerce-backend/internal/types"
 )
 
 type AuthService struct {
@@ -248,60 +249,68 @@ func (s *AuthService) Login(req LoginRequest) (*AuthResponse, error) {
 	}, nil
 }
 
-func (s *AuthService) RefreshToken(req RefreshRequest) (*AuthResponse, error) {
-	// Validate refresh token
+// services/auth_service.go
+func (s *AuthService) RefreshToken(req RefreshRequest) (*types.AuthResponse, error) {
 	claims, err := utils.ValidateToken(req.RefreshToken, s.jwtSecret)
 	if err != nil {
 		return nil, errors.New("invalid refresh token")
 	}
 
-	// Check if it's a refresh token
 	if claims.Type != string(utils.RefreshToken) {
 		return nil, errors.New("invalid token type")
 	}
 
-	// Check if refresh token exists and is not revoked
 	var refreshToken models.RefreshToken
-	if err := s.db.Where("token = ? AND is_revoked = ? AND expires_at > ?",
-		req.RefreshToken, false, time.Now()).First(&refreshToken).Error; err != nil {
-		return nil, errors.New("refresh token not found or expired")
+	if err := s.db.Where("token = ? AND is_revoked = ? AND expires_at > ?", req.RefreshToken, false, time.Now()).
+		First(&refreshToken).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("refresh token not found or expired")
+		}
+		return nil, err
 	}
 
-	// Get user
 	var user models.User
-	if err := s.db.Where("id = ? AND is_active = ?", refreshToken.UserID, true).First(&user).Error; err != nil {
+	if err := s.db.Where("id = ? AND is_active = ?", refreshToken.UserID, true).
+		First(&user).Error; err != nil {
 		return nil, errors.New("user not found")
 	}
 
-	// Revoke old refresh token
-	refreshToken.IsRevoked = true
-	s.db.Save(&refreshToken)
+	// Transactional revoke and new insert
+	tx := s.db.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
 
-	// Generate new token pair
-	tokenPair, err := utils.GenerateTokenPair(user.ID, user.Email, user.Role, s.jwtSecret)
-	if err != nil {
-		return nil, errors.New("failed to generate tokens")
+	refreshToken.IsRevoked = true
+	if err := tx.Save(&refreshToken).Error; err != nil {
+		tx.Rollback()
+		return nil, errors.New("failed to revoke old token")
 	}
 
-	// Store new refresh token
-	newRefreshToken := models.RefreshToken{
+	tokenPair, err := utils.GenerateTokenPair(user.ID, user.Email, user.Role, s.jwtSecret)
+	if err != nil {
+		tx.Rollback()
+		return nil, errors.New("failed to generate new tokens")
+	}
+
+	newRefresh := models.RefreshToken{
 		UserID:    user.ID,
 		Token:     tokenPair.RefreshToken,
 		ExpiresAt: time.Unix(tokenPair.RefreshTokenExpiresAt, 0),
 		IsRevoked: false,
 	}
 
-	if err := s.db.Create(&newRefreshToken).Error; err != nil {
-		return nil, errors.New("failed to store refresh token")
+	if err := tx.Create(&newRefresh).Error; err != nil {
+		tx.Rollback()
+		return nil, errors.New("failed to store new refresh token")
 	}
 
-	return &AuthResponse{
-		Token: struct {
-			AccessToken           string `json:"access_token"`
-			RefreshToken          string `json:"refresh_token"`
-			AccessTokenExpiresAt  int64  `json:"access_token_expires_at"`
-			RefreshTokenExpiresAt int64  `json:"refresh_token_expires_at"`
-		}{
+	tx.Commit()
+
+	return &types.AuthResponse{
+		Token: types.TokenPair{
 			AccessToken:           tokenPair.AccessToken,
 			RefreshToken:          tokenPair.RefreshToken,
 			AccessTokenExpiresAt:  tokenPair.AccessTokenExpiresAt,
@@ -310,6 +319,7 @@ func (s *AuthService) RefreshToken(req RefreshRequest) (*AuthResponse, error) {
 		User: user,
 	}, nil
 }
+
 
 func (s *AuthService) Logout(refreshToken string) error {
 	// Revoke the refresh token

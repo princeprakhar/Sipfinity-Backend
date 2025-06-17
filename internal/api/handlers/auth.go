@@ -73,7 +73,11 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 
 	response, err := h.authService.RefreshToken(req)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
+		status := http.StatusUnauthorized
+		if err.Error() == "invalid request" {
+			status = http.StatusBadRequest
+		}
+		c.JSON(status, gin.H{
 			"success": false,
 			"message": "Token refresh failed",
 			"error":   err.Error(),

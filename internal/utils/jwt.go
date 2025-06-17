@@ -33,7 +33,7 @@ type TokenPair struct {
 
 // Generate access token (short-lived: 15 minutes)
 func GenerateAccessToken(userID uint, email, role, jwtSecret string) (string, time.Time, error) {
-	expirationTime := time.Now().Add(15 * time.Minute)
+	expirationTime := time.Now().Add( 15* time.Minute)
 	
 	claims := &Claims{
 		UserID: userID,
