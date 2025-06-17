@@ -16,10 +16,11 @@ import (
 	"time"
 )
 
-const MaxImageSize = 10 * 1024 * 1024 
+const MaxImageSize = 10 * 1024 * 1024
+
 var (
-	ErrInvalidInput    = errors.New("invalid input parameters")
-	ErrS3Upload        = errors.New("S3 upload failed")
+	ErrInvalidInput          = errors.New("invalid input parameters")
+	ErrS3Upload              = errors.New("S3 upload failed")
 	ErrProductAlreadyDeleted = errors.New("product already deleted")
 )
 
@@ -65,12 +66,12 @@ func (s *AdminService) CreateProduct(productReq *models.CreateProductRequest, im
 		Description: productReq.Description,
 		Price:       productReq.Price,
 		Category:    productReq.Category,
-		Size: 			productReq.Size,
+		Size:        productReq.Size,
 		Material:    productReq.Material,
 		Status:      productReq.Status,
 		Stock:       productReq.Stock,
 		Images:      []models.Image{},
-		Services: 	[]models.Service{}	,
+		Services:    []models.Service{},
 	}
 
 	if productReq.Services != nil {
@@ -124,7 +125,7 @@ func (s *AdminService) CreateProduct(productReq *models.CreateProductRequest, im
 		}
 
 		product.Images = images
-		
+
 	}
 
 	// Commit transaction
@@ -231,23 +232,31 @@ func (s *AdminService) UpdateProduct(ctx context.Context, productID uint, update
 
 	// Handle services update
 	if updateReq.Services != nil {
+		// First, delete old services
+		if err := tx.Where("product_id = ?", product.ID).Delete(&models.Service{}).Error; err != nil {
+			tx.Rollback()
+			return nil, fmt.Errorf("%w: failed to delete old services: %v", ErrDatabaseQuery, err)
+		}
+
+		// Then, insert new services
 		var services []models.Service
 		for _, svc := range updateReq.Services {
 			if svc.Name == "" {
 				tx.Rollback()
 				return nil, fmt.Errorf("%w: service name cannot be empty", ErrInvalidInput)
 			}
-			service := models.Service{
+			services = append(services, models.Service{
 				ProductID: product.ID,
 				Name:      strings.TrimSpace(svc.Name),
 				Link:      strings.TrimSpace(svc.Link),
-			}
-			services = append(services, service)
+			})
 		}
 
-		if err := tx.Model(&product).Association("Services").Replace(services); err != nil {
-			tx.Rollback()
-			return nil, fmt.Errorf("%w: failed to update services: %v", ErrDatabaseQuery, err)
+		if len(services) > 0 {
+			if err := tx.Create(&services).Error; err != nil {
+				tx.Rollback()
+				return nil, fmt.Errorf("%w: failed to insert new services: %v", ErrDatabaseQuery, err)
+			}
 		}
 	}
 
@@ -345,18 +354,16 @@ func (s *AdminService) UpdateProduct(ctx context.Context, productID uint, update
 
 	return &updatedProduct, nil
 }
+
 func (s *AdminService) DeleteProduct(ctx context.Context, productID uint) error {
-	// Input validation
 	if productID == 0 {
 		return fmt.Errorf("%w: invalid product ID", ErrInvalidInput)
 	}
 
-	// Set context timeout
 	ctx, cancel := context.WithTimeout(ctx, QueryTimeout)
-	defer cancel() // **FIX: This was missing**
+	defer cancel()
 
-	// Start transaction with context
-	tx := s.db.WithContext(ctx).Begin() // **FIX: Apply context to transaction**
+	tx := s.db.WithContext(ctx).Begin()
 	defer func() {
 		if r := recover(); r != nil {
 			tx.Rollback()
@@ -373,87 +380,71 @@ func (s *AdminService) DeleteProduct(ctx context.Context, productID uint) error 
 		return fmt.Errorf("%w: failed to find product: %v", ErrDatabaseQuery, err)
 	}
 
-	// Check if product is already deleted/inactive
-	if product.Status == "inactive" {
-		tx.Rollback()
-		return fmt.Errorf("%w: product is already inactive", ErrProductAlreadyDeleted)
+	// Collect image S3 keys for deletion
+	var keysToDelete []string
+	for _, img := range product.Images {
+		if img.S3Key != "" {
+			keysToDelete = append(keysToDelete, img.S3Key)
+		}
 	}
 
-	// Soft delete product
-	if err := tx.Model(&product).Updates(map[string]interface{}{
-		"status":     "inactive",
-		"updated_at": time.Now(),
-	}).Error; err != nil {
+	// 1. Delete review likes
+	// Delete review likes where the related review belongs to the product
+if err := tx.Where("review_id IN (?)",
+	tx.Model(&models.Review{}).Select("id").Where("product_id = ?", productID),
+).Delete(&models.ReviewLike{}).Error; err != nil {
+	tx.Rollback()
+	return fmt.Errorf("failed to delete review likes: %v", err)
+}
+
+
+	// 2. Delete reviews
+	if err := tx.Where("product_id = ?", productID).Delete(&models.Review{}).Error; err != nil {
 		tx.Rollback()
-		return fmt.Errorf("%w: failed to delete product: %v", ErrDatabaseQuery, err)
+		return fmt.Errorf("failed to delete reviews: %v", err)
 	}
 
-	// Soft delete associated images
-	if err := tx.Model(&models.Image{}).
-		Where("product_id = ?", productID).
-		Updates(map[string]interface{}{
-			"is_active":  false,
-			"updated_at": time.Now(),
-		}).Error; err != nil {
+	// 3. Delete product reactions
+	if err := tx.Where("product_id = ?", productID).Delete(&models.ProductReaction{}).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to delete product reactions: %v", err)
+	}
+
+	// Delete images from DB
+	if err := tx.Where("product_id = ?", productID).Delete(&models.Image{}).Error; err != nil {
 		tx.Rollback()
 		return fmt.Errorf("%w: failed to delete product images: %v", ErrDatabaseQuery, err)
 	}
 
-	// **OPTIONAL**: Also soft delete associated services
-	if err := tx.Model(&models.Service{}).
-		Where("product_id = ?", productID).
-		Updates(map[string]interface{}{
-			"is_active":  false, // Assuming you have is_active field for services
-			"updated_at": time.Now(),
-		}).Error; err != nil {
-		// Log warning but don't fail the operation if services table doesn't have is_active
-		fmt.Printf("Warning: Failed to soft delete services: %v\n", err)
+	// Delete services from DB
+	if err := tx.Where("product_id = ?", productID).Delete(&models.Service{}).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("%w: failed to delete product services: %v", ErrDatabaseQuery, err)
 	}
 
-	// Commit transaction
+	// Finally, delete the product itself
+	if err := tx.Delete(&product).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("%w: failed to delete product: %v", ErrDatabaseQuery, err)
+	}
+
 	if err := tx.Commit().Error; err != nil {
 		return fmt.Errorf("%w: failed to commit transaction: %v", ErrDatabaseQuery, err)
 	}
 
-	// **IMPROVED**: Only delete from S3 if there are active images
-	// Consider making this optional or configurable for recovery purposes
-	activeImages := make([]models.Image, 0)
-	for _, img := range product.Images {
-		if img.IsActive {
-			activeImages = append(activeImages, img)
-		}
-	}
-
-	if len(activeImages) > 0 {
+	// Delete images from S3 (async)
+	if len(keysToDelete) > 0 {
 		go func() {
-			// Create a new context for the background operation
-			_, bgCancel := context.WithTimeout(context.Background(), 5*time.Minute)
-			defer bgCancel()
-
-			var keys []string
-			for _, img := range activeImages {
-				if img.S3Key != "" { // Ensure S3Key is not empty
-					keys = append(keys, img.S3Key)
-				}
-			}
-
-			if len(keys) > 0 {
-				if err := s.s3Service.DeleteMultipleImages(keys); err != nil {
-					// Log error with more context
-					fmt.Printf("Warning: Failed to delete %d images from S3 for product %d: %v\n", 
-						len(keys), productID, err)
-				} else {
-					fmt.Printf("Successfully deleted %d images from S3 for product %d\n", 
-						len(keys), productID)
-				}
+			if err := s.s3Service.DeleteMultipleImages(keysToDelete); err != nil {
+				fmt.Printf("Warning: Failed to delete images from S3 for product %d: %v\n", productID, err)
+			} else {
+				fmt.Printf("Successfully deleted %d images from S3 for product %d\n", len(keysToDelete), productID)
 			}
 		}()
 	}
 
 	return nil
 }
-
-
 
 func (s *AdminService) ProcessCSVUpload(file *multipart.FileHeader, adminEmail string) (*models.ProductUploadResponse, error) {
 	// Open CSV file
@@ -496,14 +487,14 @@ func (s *AdminService) ProcessCSVUpload(file *multipart.FileHeader, adminEmail s
 		}
 
 		product := models.Product{
-			Title:        strings.TrimSpace(record[0]),
+			Title:       strings.TrimSpace(record[0]),
 			Description: strings.TrimSpace(record[1]),
 			Price:       price,
 			Category:    strings.TrimSpace(record[3]),
 			Material:    strings.TrimSpace(record[4]),
-			Size:       strings.TrimSpace(record[5]),
+			Size:        strings.TrimSpace(record[5]),
 			Stock:       stock,
-			Status:    "active", // Default status
+			Status:      "active",         // Default status
 			Images:      []models.Image{}, // No images in CSV upload
 		}
 
@@ -531,8 +522,7 @@ func (s *AdminService) GetProducts(page, limit int) ([]models.Product, error) {
 	offset := (page - 1) * limit
 
 	err := s.db.Preload("Images", "is_active = ?", true).
-		Preload("Reviews").
-		Where("is_active = ?", true).
+		Preload("Reviews").Preload("Services").
 		Order("created_at DESC").
 		Offset(offset).
 		Limit(limit).
@@ -580,10 +570,6 @@ func (s *AdminService) validateProductRequest(req *models.CreateProductRequest) 
 	return nil
 }
 
-
-
-
-
 // Add these methods to your AdminService in services/admin.go
 
 func (s *AdminService) GetProductByID(ctx context.Context, productID uint) (*models.Product, error) {
@@ -597,7 +583,7 @@ func (s *AdminService) GetProductByID(ctx context.Context, productID uint) (*mod
 	defer cancel()
 
 	var product models.Product
-	
+
 	// Admin can access products regardless of status (active/inactive)
 	err := s.db.WithContext(ctx).
 		Preload("Images"). // Load all images (active and inactive for admin)
@@ -626,11 +612,11 @@ func (s *AdminService) SearchProducts(params map[string]interface{}) ([]models.P
 	if searchQuery, ok := params["query"].(string); ok && searchQuery != "" {
 		query = query.Where("name ILIKE ? OR description ILIKE ?", "%"+searchQuery+"%", "%"+searchQuery+"%")
 	}
-	
+
 	if category, ok := params["category"].(string); ok && category != "" {
 		query = query.Where("category = ?", category)
 	}
-	
+
 	if brand, ok := params["brand"].(string); ok && brand != "" {
 		query = query.Where("brand = ?", brand)
 	}

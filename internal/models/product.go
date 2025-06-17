@@ -105,7 +105,7 @@ type CreateServiceRequest struct {
 type UpdateProductRequest struct {
 	Title       *string  `json:"title,omitempty"`
 	Description *string  `json:"description,omitempty"`
-	Price       *float64 `json:"price,omitempty"`
+	Price       *float64 	`json:"price,string,omitempty"`
 	Category    *string  `json:"category,omitempty"`
 	Material    *string  `json:"material,omitempty"`
 	Size        *string  `json:"size,omitempty"`

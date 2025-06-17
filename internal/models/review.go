@@ -7,7 +7,7 @@ import (
 type Review struct {
 	ID        uint      `json:"id" gorm:"primaryKey"`
 	UserID    uint      `json:"user_id" gorm:"not null"`
-	ProductID uint      `json:"product_id" gorm:"not null"`
+	ProductID uint      `json:"product_id" gorm:"not nullconstraint:OnDelete:CASCADE;"`
 	Rating    int       `json:"rating" gorm:"check:rating >= 1 AND rating <= 5"`
 	Comment   string    `json:"comment"`
 	IsFlagged bool      `json:"is_flagged" gorm:"default:false"`
