@@ -52,6 +52,9 @@ func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	// Auth routes (public)
 	auth := api.Group("/auth")
 	{
+		auth.GET("/health", func(c *gin.Context) {
+			c.JSON(200, gin.H{"status": "ok", "message": "Auth service is running"})
+		})
 		auth.POST("/signup", authHandler.Signup)
 		auth.POST("/login", authHandler.Login)
 		auth.POST("/logout", middleware.AuthMiddleware(cfg), authHandler.Logout)
